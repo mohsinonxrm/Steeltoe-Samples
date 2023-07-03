@@ -33,12 +33,15 @@ namespace CloudFoundrySingleSignon
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
             services.AddCloudFoundryContainerIdentity();
-            services.AddHttpClient("default", (services, client) =>
+            services.AddHttpClient("default", (serviceProvider, client) =>
             {
-                var options = services.GetService<IOptions<CertificateOptions>>();
-                var b64 = Convert.ToBase64String(options.Value.Certificate.Export(X509ContentType.Cert));
-                client.DefaultRequestHeaders.Add("X-Forwarded-Client-Cert", b64);
-            }).ConfigurePrimaryHttpMessageHandler((isp) => new HttpClientHandler { ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true });
+                var options = serviceProvider.GetService<IOptions<CertificateOptions>>();
+                if (options?.Value.Certificate != null)
+                {
+                    var b64 = Convert.ToBase64String(options.Value.Certificate.Export(X509ContentType.Cert));
+                    client.DefaultRequestHeaders.Add("X-Forwarded-Client-Cert", b64);
+                }
+            }).ConfigurePrimaryHttpMessageHandler((isp) => new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true });
 
 
             services.AddAuthentication((options) =>

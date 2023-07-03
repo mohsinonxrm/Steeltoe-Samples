@@ -16,32 +16,34 @@ namespace CloudFoundrySingleSignon.Controllers
     {
         private readonly HttpClient httpClient;
         private readonly ILogger<HomeController> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public HomeController(IHttpClientFactory clientFactory, ILogger<HomeController> logger)
+        public HomeController(IHttpContextAccessor httpContextAccessor, IHttpClientFactory clientFactory, ILogger<HomeController> logger)
         {
+            _httpContextAccessor = httpContextAccessor;
             httpClient = clientFactory.CreateClient("default");
             _logger = logger;
         }
 
         public IActionResult Index()
-        {
+        { 
             return View();
         }
 
         #region SSO
 
         [Authorize(Policy = "testgroup")]
-        public IActionResult About()
+        public IActionResult TestGroup()
         {
-            ViewData["Message"] = "Your About page.";
+            ViewData["Message"] = "You have the 'testgroup' permission.";
             return View();
         }
 
 
         [Authorize(Policy = "testgroup1")]
-        public IActionResult Contact()
+        public IActionResult AnotherTestGroup()
         {
-            ViewData["Message"] = "Your contact page.";
+            ViewData["Message"] = "You have the 'testgroup1' permission.";
 
             return View();
         }
@@ -57,15 +59,15 @@ namespace CloudFoundrySingleSignon.Controllers
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             string values;
-            var jwtSamplesUrl = GetSamplesUrl(HttpContext, JWTAPPS_HOSTNAME);
+            var jwtSamplesUrl = GetSamplesUrl(HttpContext, JwtAppHostname);
 
             try
             {
-                values = await httpClient.GetStringAsync(jwtSamplesUrl + "/api/values");
+                values = await httpClient.GetStringAsync($"{jwtSamplesUrl}/api/values");
             }
             catch (Exception e)
             {
-                values = "Request failed: " + e.Message + ", expect JWT Sample app to be listening at: " + jwtSamplesUrl;
+                values = $"Request failed: {e.Message}, looked for JWT Sample app at: {jwtSamplesUrl}";
             }
 
             return View("InvokeService", values);
@@ -77,13 +79,13 @@ namespace CloudFoundrySingleSignon.Controllers
 
         public async Task<IActionResult> InvokeSameOrgSample()
         {
-            var result = await httpClient.GetStringAsync(GetSamplesUrl(HttpContext, MTLS_HOSTNAME) + "/api/SameOrgCheck");
+            var result = await httpClient.GetStringAsync(GetSamplesUrl(HttpContext, MutualTlsAppHostname) + "/api/SameOrgCheck");
             return View("InvokeService", result);
         }
 
         public async Task<IActionResult> InvokeSameSpaceSample()
         {
-            var result = await httpClient.GetStringAsync(GetSamplesUrl(HttpContext, MTLS_HOSTNAME) + "/api/SameSpaceCheck");
+            var result = await httpClient.GetStringAsync(GetSamplesUrl(HttpContext, MutualTlsAppHostname) + "/api/SameSpaceCheck");
             return View("InvokeService", result);
         }
 
@@ -99,14 +101,14 @@ namespace CloudFoundrySingleSignon.Controllers
         public async Task<IActionResult> LogOff()
         {
             await HttpContext.SignOutAsync();
-            return RedirectToAction(nameof(HomeController.Index), "Home");
+            return RedirectToAction(nameof(Index), "Home");
         }
 
         [HttpGet]
         [Authorize]
         public IActionResult Login()
         {
-            return RedirectToAction(nameof(HomeController.Index), "Home");
+            return RedirectToAction(nameof(Index), "Home");
         }
 
         public IActionResult Manage()
@@ -122,42 +124,40 @@ namespace CloudFoundrySingleSignon.Controllers
         }
         #endregion
 
-        const string JWTAPPS_HOSTNAME = "jwtauth";
-        const string SSO_HOSTNAME = "single-signon";
-        const string MTLS_HOSTNAME = "mtls-server";
+        private const string JwtAppHostname = "jwtauth";
+        private const string MutualTlsAppHostname = "mtls-server";
+        private const string SsoHostname = "single-signon";
         private string GetSamplesUrl(HttpContext httpContext, string serviceName)
         {
             var hostName = httpContext.Request.Host.Host;
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
             var serviceHostname = hostName;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-            var indx = hostName.IndexOf(SSO_HOSTNAME);
-            if (indx >= 0)
+            var indexOfHost = hostName.IndexOf(SsoHostname, StringComparison.Ordinal);
+            if (indexOfHost >= 0)
             {
-                var prefix = hostName.Substring(indx + 13, 0);
-                var suffix = hostName.Substring(indx + 13, hostName.Length - indx - 13);
+                var prefix = hostName.Substring(indexOfHost + 13, 0);
+                var suffix = hostName.Substring(indexOfHost + 13, hostName.Length - indexOfHost - 13);
                 serviceHostname = prefix + serviceName + suffix;
             }
             else
             {
-                indx = hostName.IndexOf('.');
-                if (indx < 0)
+                indexOfHost = hostName.IndexOf('.');
+                if (indexOfHost < 0)
                 {
-                    serviceHostname = hostName + Services[serviceName];
+                    serviceHostname = hostName + _services[serviceName];
                 }
                 else
                 {
-                    serviceHostname = serviceName + hostName.Substring(indx);
+                    serviceHostname = string.Concat(serviceName, hostName.AsSpan(indexOfHost));
                 }
             }
 
             return "https://" + serviceHostname;
         }
 
-        private readonly Dictionary<string, string> Services = new Dictionary<string, string>
+        private readonly Dictionary<string, string> _services = new()
         {
-            { JWTAPPS_HOSTNAME, ":8083" },
-            { MTLS_HOSTNAME, ":8085" }
+            { JwtAppHostname, ":8083" },
+            { MutualTlsAppHostname, ":8085" }
         };
     }
 }
